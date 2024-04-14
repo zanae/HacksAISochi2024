@@ -18,7 +18,7 @@
 
 # 2. API приложение
 
-![](Assets/Archecture-diargam.svg)
+![]([https://github.com//repository](https://github.com/blasckad/HacksAISochi2024/tree/patch-1)/Assets/Archecture-diargam.svg)
 
 Пояснения к диаграмме архитектуры: 
 Стрелки означают поток данных, красные – низкоцелостные, зеленые – высокоцелостные
