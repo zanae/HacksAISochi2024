@@ -165,7 +165,7 @@ with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfi
     # Создание CSV-файла для результатов
     with open('MYDS.csv', 'w', newline='', encoding='utf-8') as outfile:
         csvwriter = csv.writer(outfile, delimiter=';')
-        csvwriter.writerow(['Наименование файла', 'Результат', 'Категория продукта', 'Цена'])
+        csvwriter.writerow(['Наименование файла','Категория продукта', 'Цена'])
 
         # Инициализация tqdm #-- прогресс бар
         images = []
@@ -194,7 +194,7 @@ with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfi
             pricerubcop = []
             pricerubcopcls=[]
             result_price = [['0'],['0']]
-            filename, product_name, category, price = row
+            filename,  = row
             res_rublkop = rublkop(image, conf=0.7)  # детекция областей цены на ценнике
 
             for box, cls in zip(res_rublkop[0].boxes.xyxy.cpu(),np.array(results[0].boxes.cls.cpu(), dtype=int)):
@@ -240,7 +240,7 @@ with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfi
                 gc.collect()
             if discr != [] and result_price!=[]:
                 price = ".".join([str("".join(x)) for x in result_price])
-                csvwriter.writerow([filename, replace_multiple_spaces(''.join(discr)), categories[predicted_class], result_price])
+                csvwriter.writerow([filename, categories[predicted_class[0]], result_price])
             gc.collect()  # гарбаж коллектор
             # Обновление индикатора выполнения
             pbar.update(1)
