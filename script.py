@@ -8,7 +8,17 @@ import re
 import numpy as np
 import os
 import torch
+from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoConfig, AutoModelForSequenceClassification
+
+
+font_path = 'arial.ttf'
+font_size = 50
+font = ImageFont.truetype(font_path, font_size)
+
+# Specify the text and color
+text_color = (0, 0, 0)  # Black color
+
 
 categories = {0: 'Макаронные изделия',
  1: 'Ячневая крупа',
@@ -114,7 +124,7 @@ def filter_text(text):
     filtered_text = re.sub(r'\s+', ' ', filtered_text).strip()
     #filtered_text = list(filter(None, filtered_text))
     return "".join(filtered_text) #filtered_text
-def expand_box(box, image, percentage=10):
+def expand_box(box, image, percentage=5):
     # Распаковка координат бокса
     x1, y1, x2, y2 = box
 
@@ -142,21 +152,12 @@ def expand_box(box, image, percentage=10):
 
     # Вырезать бокс из изображения
     cropped_image = image[new_y1:new_y2, new_x1:new_x2]
-    cropped_image = cv2.resize(cropped_image, (0, 0), fx=3, fy=3)
-    gray = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (3, 3), 0)
-    thresh = cv2.threshold(blur, 50, 200, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-
-    # # Morph open to remove noise and invert image
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    opening = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
-    return opening
+    return cropped_image
 
 # Открытие CSV-файла
 with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfile:
     csvreader = csv.reader(csvfile, delimiter=';')
     next(csvreader)  # Пропуск заголовка
-
     # Подсчет количества строк в CSV-файле
     row_count = sum(1 for _ in csvreader)
     csvfile.seek(0)  # Возврат к началу файла
@@ -171,9 +172,9 @@ with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfi
         images = []
         data = []
         for row in csvreader:
-            filename = row
+            filename,  = row
             data.append(row)
-            image_path = f'ds/train_dataset_dnr-train/test/{filename[0]}.jpg'
+            image_path = f'ds/train_dataset_dnr-train/test/{filename}.jpg'
 
             # Открытие изображения
             image = cv2.imread(image_path)
@@ -189,31 +190,35 @@ with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfi
         pbar = tqdm(total=row_count, desc="Processing images")
 
         for result, image, row in zip(results, images, data):
+
             # Для каждого бокса
             discr = []
-            pricerubcop = []
-            pricerubcopcls=[]
             result_price = [['0'],['0']]
             filename,  = row
-            res_rublkop = rublkop(image, conf=0.7)  # детекция областей цены на ценнике
 
-            for box, cls in zip(res_rublkop[0].boxes.xyxy.cpu(),np.array(results[0].boxes.cls.cpu(), dtype=int)):
-                xx1, yy1, xx2, yy2 = box.tolist()
-                try:
-                    ppp = reader.readtext(expand_box(box, image, 10), detail=0, text_threshold=0.01,
-                                          allowlist='0123456789')
-                except:
-                    print(filename)
-                    continue
-                result_price[cls]=ppp
-
-            for box in result.boxes.xyxy.cpu():
-                x1, y1, x2, y2 = box.tolist()
+            for bbox in result.boxes.xyxy.cpu():
+                x1, y1, x2, y2 = bbox.tolist()
 
                 gc.collect()
 
                 # Вырезание картинки из изображения
-                cropped_image = expand_box(box, image, 0)
+                cropped_image = expand_box(bbox, image, 0)
+                res_rublkop = rublkop(cropped_image, conf=0.7)  # детекция областей цены на ценнике
+                a = Image.fromarray(res_rublkop[0].plot())
+                ad = ImageDraw.Draw(a)
+                boxes = np.array(res_rublkop[0].boxes.xyxy.cpu(), dtype=int)
+                classes = np.array(res_rublkop[0].boxes.cls.cpu(), dtype=int)
+                for i in range(len(boxes)):
+                    # print(np.array(res_rublkop[0].boxes.xyxy.cpu()))
+
+                    try:
+                        ppp = reader.readtext(expand_box(boxes[i], cropped_image, 10), detail=0, text_threshold=0.8, allowlist='0123456789')
+                    except:
+                        print(filename)
+                        continue
+                    if ppp!=[]:
+                        result_price[classes[i]] = ppp
+
                 # Распознавание текста с помощью easyOCR
                 try:
                     ocr_results = reader.readtext(cropped_image, detail=0, text_threshold=0.01)
@@ -238,13 +243,16 @@ with open('ds/train_dataset_dnr-train/test.csv', 'r', encoding='utf-8') as csvfi
                 discr = discr + list(filtered_results)
 
                 gc.collect()
-            if discr != [] and result_price!=[]:
-                price = ".".join([str("".join(x)) for x in result_price])
-                csvwriter.writerow([filename, categories[predicted_class[0]], result_price])
+            if discr != [] and result_price!=[['0'],['0']]and result_price!=[['00'],['0']]:
+                j = [str("".join(x)) for x in result_price]
+                price = ".".join(j)
+                ad.text((50, 50),price,fill=text_color, font=font)
+                ad.text((50, 100),categories[predicted_class[0]],fill=text_color, font=font)
+                a.save(f'out_imgs/{filename}.jpg')
+
+                csvwriter.writerow([filename, categories[predicted_class[0]], replace_multiple_spaces(price)])
             gc.collect()  # гарбаж коллектор
-            # Обновление индикатора выполнения
             pbar.update(1)
-        # Закрытие индикатора выполнения
         pbar.close()
 # очистка gpu
 torch.cuda.empty_cache()
